@@ -287,6 +287,40 @@ async def test_shell_tool_structured_output_is_rendered() -> None:
 
 
 @pytest.mark.asyncio
+async def test_shell_tool_empty_structured_output_is_not_fabricated() -> None:
+    # A ShellResult with an empty output list is the legitimate result of a command that ran
+    # successfully and printed nothing (e.g. ``true``). The SDK must not fabricate stdout from
+    # the human-readable ``"(no output)"`` placeholder into the model-visible shell_call_output
+    # or the persisted shell_output.
+    shell_tool = ShellTool(executor=lambda request: ShellResult(output=[]))
+
+    tool_call = _shell_call("call_shell_empty")
+    tool_call["action"]["commands"] = ["true"]
+
+    tool_run = ToolRunShellCall(tool_call=tool_call, shell_tool=shell_tool)
+    agent = Agent(name="shell-agent", tools=[shell_tool])
+    context_wrapper: RunContextWrapper[Any] = RunContextWrapper(context=None)
+
+    result = await ShellAction.execute(
+        agent=agent,
+        call=tool_run,
+        hooks=RunHooks[Any](),
+        context_wrapper=context_wrapper,
+        config=RunConfig(),
+    )
+
+    assert isinstance(result, ToolCallOutputItem)
+    raw_item = cast(dict[str, Any], result.raw_item)
+    assert raw_item["type"] == "shell_call_output"
+    assert raw_item["status"] == "completed"
+    # No fabricated structured entry: the model sees an empty output list.
+    assert raw_item["output"] == []
+    # The fabricated placeholder must not be persisted as a real shell output entry either.
+    assert "shell_output" not in raw_item
+    assert "(no output)" not in json.dumps(raw_item)
+
+
+@pytest.mark.asyncio
 async def test_shell_tool_emits_function_span() -> None:
     shell_tool = ShellTool(executor=lambda request: "shell span output")
     tool_run = ToolRunShellCall(tool_call=_shell_call("call_shell_trace"), shell_tool=shell_tool)

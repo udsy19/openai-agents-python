@@ -624,7 +624,9 @@ class ShellAction:
                 log_tool_action_error("Shell executor failed", exc)
 
             raw_entries: list[dict[str, Any]] | None = None
-            if shell_output_payload:
+            if shell_output_payload is not None:
+                # A structured ShellResult was returned (possibly empty). Trust it as-is and do
+                # not synthesize an entry from the human-readable ``output_text`` placeholder.
                 raw_entries = shell_output_payload
             elif output_text:
                 raw_entries = [
